@@ -1,37 +1,45 @@
 #include <iostream>
 #include <cmath>
-
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <common/shader.hpp>
 #include <common/texture.hpp>
 #include <common/maths.hpp>
 #include <common/camera.hpp>
-#include <common/model.hpp>
-#include <common/light.hpp>
 
 // Function prototypes
-void keyboardInput(GLFWwindow *window);
+void keyboardInput(GLFWwindow* window);
 
 // Create camera object
 Camera camera(glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
 
-int main( void )
+// Object struct
+struct Object
+{
+    glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 rotation = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 scale = glm::vec3(1.0f, 1.0f, 1.0f);
+    float angle = 0.0f;
+    std::string name;
+};
+
+int main(void)
 {
     // =========================================================================
     // Window creation - you shouldn't need to change this code
     // -------------------------------------------------------------------------
     // Initialise GLFW
-    if( !glfwInit() )
+    if (!glfwInit())
     {
-        fprintf( stderr, "Failed to initialize GLFW\n" );
+        fprintf(stderr, "Failed to initialize GLFW\n");
         getchar();
         return -1;
     }
 
     glfwWindowHint(GLFW_SAMPLES, 4);
-    glfwWindowHint(GLFW_RESIZABLE,GL_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -39,9 +47,9 @@ int main( void )
 
     // Open a window and create its OpenGL context
     GLFWwindow* window;
-    window = glfwCreateWindow(1024, 768, "Computer Graphics Coursework", NULL, NULL);
-    
-    if( window == NULL ){
+    window = glfwCreateWindow(1024, 768, "Lab06 3D Worlds", NULL, NULL);
+
+    if (window == NULL) {
         fprintf(stderr, "Failed to open GLFW window.\n");
         getchar();
         glfwTerminate();
@@ -61,9 +69,9 @@ int main( void )
     // End of window creation
     // =========================================================================
 
-     // Enable depth test
+    // Enable depth test
     glEnable(GL_DEPTH_TEST);
-    
+
     // Ensure we can capture keyboard inputs
     glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 
@@ -207,6 +215,33 @@ int main( void )
     textureID = glGetUniformLocation(shaderID, "texture");
     glUniform1i(textureID, 0);
 
+    // Cube positions
+    glm::vec3 positions[] = {
+        glm::vec3(0.0f,  0.0f,  0.0f),
+        glm::vec3(2.0f,  5.0f, -10.0f),
+        glm::vec3(-3.0f, -2.0f, -3.0f),
+        glm::vec3(-4.0f, -2.0f, -8.0f),
+        glm::vec3(2.0f,  2.0f, -6.0f),
+        glm::vec3(-4.0f,  3.0f, -8.0f),
+        glm::vec3(0.0f, -2.0f, -5.0f),
+        glm::vec3(4.0f,  2.0f, -4.0f),
+        glm::vec3(2.0f,  0.0f, -2.0f),
+        glm::vec3(-1.0f,  1.0f, -2.0f)
+    };
+
+    // Add cubes to objects vector
+    std::vector<Object> objects;
+    Object object;
+    object.name = "cube";
+    for (unsigned int i = 0; i < 10; i++)
+    {
+        object.position = positions[i];
+        object.rotation = glm::vec3(1.0f, 1.0f, 1.0f);
+        object.scale = glm::vec3(0.5f, 0.5f, 0.5f);
+        object.angle = Maths::radians(20.0f * i);
+        objects.push_back(object);
+    }
+
     // Render loop
     while (!glfwWindowShouldClose(window))
     {
@@ -234,21 +269,30 @@ int main( void )
         glm::mat4 rotate = Maths::rotate(angle, glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 model = translate * rotate * scale;
 
-        // Calculate the view matrix
-        glm::mat4 view = glm::lookAt(glm::vec3(1.0f, 1.0f, 1.0f),  // eye
-            glm::vec3(0.0f, 0.0f, -2.0f), // target
-            glm::vec3(0.0f, 1.0f, 0.0f)); // worldUp
+        // Calculate view and projection matrices
+        camera.eye = glm::vec3(0.0f, 0.0f, 5.0f);
+        camera.target = objects[0].position;
+        camera.calculateMatrices();
 
-        // Calculate orthographic projection matrix
-        glm::mat4 projection = glm::ortho(-2.0f, 2.0f, -2.0f, 2.0f, 0.0f, 10.0f);
+        // Loop through cubes and draw each one
+        for (int i = 0; i < static_cast<unsigned int>(objects.size()); i++)
+        {
+            // Calculate the model matrix
+            glm::mat4 translate = Maths::translate(objects[i].position);
+            glm::mat4 scale = Maths::scale(objects[i].scale);
+            glm::mat4 rotate = Maths::rotate(objects[i].angle, objects[i].rotation);
+            glm::mat4 model = translate * rotate * scale;
 
-        // Send MVP matrix to the vertex shader
-        glm::mat4 MVP = projection * view * model;
-        glUniformMatrix4fv(glGetUniformLocation(shaderID, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+            // Calculate the MVP matrix
+            glm::mat4 MVP = camera.projection * camera.view * model;
 
-        // Draw the triangles
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-        glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(unsigned int), GL_UNSIGNED_INT, 0);
+            // Send MVP matrix to the vertex shader
+            glUniformMatrix4fv(glGetUniformLocation(shaderID, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+
+            // Draw the triangles
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+            glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(unsigned int), GL_UNSIGNED_INT, 0);
+        }
 
         glDisableVertexAttribArray(0);
         glDisableVertexAttribArray(1);
@@ -257,6 +301,7 @@ int main( void )
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
     // Cleanup
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
@@ -273,4 +318,17 @@ void keyboardInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+
+    // Move the camera using WSAD keys
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera.eye += camera.front;
+
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera.eye -= camera.front;
+
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera.eye -= camera.right;
+
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.eye += camera.right;
 }
